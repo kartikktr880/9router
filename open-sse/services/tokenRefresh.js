@@ -3,6 +3,7 @@ import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import {
   refreshXaiToken,
   refreshAccessToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshQwenToken,
@@ -18,6 +19,7 @@ import {
 // Re-export all provider refresh functions (preserves public API for all consumers)
 export {
   refreshAccessToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshQwenToken,
@@ -130,6 +132,7 @@ const REFRESH_HANDLERS = {
   kiro: (c, log) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log),
   xai: (c, log) => refreshXaiToken(c.refreshToken, log),
   "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
+  cline: (c, log) => refreshClineToken(c.refreshToken, log),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };

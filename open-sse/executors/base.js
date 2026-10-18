@@ -97,6 +97,19 @@ export class BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    // Pre-flight: never dispatch upstream calls with an empty bearer token. Providers like
+    // cline respond 401 ("re-authenticate your Cline account") and trigger a cooldown when
+    // Authorization is missing/empty — fail fast locally instead.
+    if (this.provider === "cline") {
+      const bearer = credentials?.apiKey || credentials?.accessToken;
+      if (!bearer || !String(bearer).trim()) {
+        log?.error?.("FETCH", "CLINE blocked: no access token available (not connected or refresh failed) — not dispatching upstream request");
+        const err = new Error("[cline] No access token available — connect or re-authenticate the Cline provider before making requests");
+        err.status = 401;
+        throw err;
+      }
+    }
+
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;

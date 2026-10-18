@@ -214,6 +214,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   } else {
     try {
       responseBody = await providerResponse.json();
+      // Cline gateway wraps non-streaming completions in a {"data": {...}} envelope
+      // (verified live: {"data":{"choices":[...]}}) — unwrap so clients get the
+      // standard OpenAI shape. Error bodies ({ "error": ... }) are NOT wrapped.
+      if (provider === "cline" && responseBody?.data?.choices && !responseBody.choices) {
+        responseBody = responseBody.data;
+      }
     } catch (err) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);

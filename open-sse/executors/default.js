@@ -115,6 +115,22 @@ export class DefaultExecutor extends BaseExecutor {
     return { ...body, messages, response_format: { type: "json_object" } };
   }
 
+  // Cline gateway: mirror the official Cline SDK's
+  // withMaxCompletionTokensForReasoningModels — OpenAI reasoning-era models
+  // (o1/o3/o4, gpt-5 family) reject `max_tokens` and require
+  // `max_completion_tokens`.
+  transformRequest(model, body, stream, credentials) {
+    if (this.provider !== "cline") return body;
+    if (body?.max_tokens == null || typeof body.model !== "string") return body;
+    const normalized = body.model.trim().toLowerCase();
+    const isReasoningEra =
+      /(^|[^a-z0-9])o[134](?=$|[^a-z0-9])/.test(normalized) ||
+      /(^|[^a-z0-9])gpt-?5(?=$|[^a-z0-9])/.test(normalized);
+    if (!isReasoningEra) return body;
+    const { max_tokens, ...rest } = body;
+    return { ...rest, max_completion_tokens: rest.max_completion_tokens ?? max_tokens };
+  }
+
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     // Runtime transport (multi-endpoint providers): use the sourceFormat-matched endpoint
     const rt = credentials?.runtimeTransport;
@@ -167,6 +183,10 @@ export class DefaultExecutor extends BaseExecutor {
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+    // Cline: never dispatch an empty/undefined Bearer — upstream 401s and triggers a cooldown.
+    if (this.provider === "cline" && !credentials.apiKey && !credentials.accessToken) {
+      delete headers.Authorization;
+    }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -289,6 +309,9 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   async refreshCline(refreshToken, proxyOptions = null) {
+    // Graceful fallback: without a refresh token, don't dispatch a broken empty POST —
+    // the caller keeps using the currently stored access token.
+    if (!refreshToken) return null;
     const response = await proxyAwareFetch(PROVIDERS.cline.refreshUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },

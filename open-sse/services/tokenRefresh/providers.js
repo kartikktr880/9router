@@ -91,6 +91,65 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
   }, log);
 }
 
+// Cline refresh — POST JSON camelCase { refreshToken, grantType, clientType } to /auth/refresh.
+// Cline's backend validates camelCase JSON fields; the generic form-encoded snake_case refresh
+// (grant_type/refresh_token) is parsed as empty and rejected with 400 "Validation failed".
+export async function refreshClineToken(refreshToken, log) {
+  if (!refreshToken) {
+    log?.warn?.("TOKEN_REFRESH", "No refresh token available for provider: cline");
+    return null;
+  }
+  return dedupRefresh("cline", refreshToken, async () => {
+    try {
+      const response = await fetch(PROVIDERS.cline.refreshUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          refreshToken,
+          grantType: "refresh_token",
+          clientType: "extension",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh token for cline", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const payload = await response.json();
+      const data = payload?.data || payload;
+      const expiresAtIso = data?.expiresAt;
+      const expiresIn = expiresAtIso
+        ? Math.max(1, Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000))
+        : 3600;
+
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed token for cline", {
+        hasNewAccessToken: !!data?.accessToken,
+        hasNewRefreshToken: !!data?.refreshToken,
+        expiresIn,
+      });
+
+      return {
+        accessToken: data?.accessToken,
+        refreshToken: data?.refreshToken || refreshToken,
+        expiresIn,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", "Error refreshing token for cline", {
+        error: error.message,
+      });
+      return null;
+    }
+  }, log);
+}
+
 export async function refreshClaudeOAuthToken(refreshToken, log) {
   if (!refreshToken) return null;
   return dedupRefresh("claude", refreshToken, async () => {
